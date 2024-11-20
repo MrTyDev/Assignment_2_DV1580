@@ -32,6 +32,7 @@ typedef struct Block {
     size_t size;
     bool free;
     void* memory;
+    struct Block *next;
 } Block;
 
 Block* block_array = NULL;
@@ -57,41 +58,42 @@ void mem_init(size_t size) {
         printf("Failed to allocate metadata array\n");
         exit(1);
     }
-    metadata_count = 1;
 
-    block_array[0].size = size;
-    block_array[0].free = true;
-    block_array[0].memory = memory_pool;
+    block_array->size = size;
+    block_array->free = true;
+    block_array->memory = memory_pool;
+    block_array->next = NULL;
     pthread_mutex_unlock(&memory_mutex);
 }
 
 void* mem_alloc(size_t size) {
     pthread_mutex_lock(&memory_mutex);
-    for (size_t i = 0; i < metadata_count; i++) {
-        if (block_array[i].free && block_array[i].size >= size) {
+    Block* current = block_array;
+    while (current != NULL) {
+        if (current->free && current->size >= size) {
             // Split the block if it's larger than needed
-            if (block_array[i].size > size) {
-                Block* new_block_array = realloc(block_array, (metadata_count + 1) * sizeof(Block));
-                if (!new_block_array) {
-                    printf("Failed to reallocate metadata array\n");
+            if (current->size > size) {
+                Block* new_block = malloc(sizeof(Block));
+                if (!new_block) {
+                    printf("Failed to allocate new block metadata\n");
                     pthread_mutex_unlock(&memory_mutex);
                     exit(1);
                 }
-                block_array = new_block_array;
+                new_block->size = current->size - size;
+                new_block->free = true;
+                new_block->memory = (void*)((uintptr_t)current->memory + size);
+                new_block->next = current->next;
 
-                block_array[metadata_count].size = block_array[i].size - size;
-                block_array[metadata_count].free = true;
-                block_array[metadata_count].memory = (void*)((uintptr_t)block_array[i].memory + size);
-
-                block_array[i].size = size;
-                metadata_count++;
+                current->size = size;
+                current->next = new_block;
             }
-            block_array[i].free = false;
-            void* allocated_memory = block_array[i].memory;
+            current->free = false;
+            void* allocated_memory = current->memory;
             memset(allocated_memory, 0, size); // Initialize allocated memory to zero
             pthread_mutex_unlock(&memory_mutex);
             return allocated_memory;
         }
+        current = current->next;
     }
     pthread_mutex_unlock(&memory_mutex);
     return NULL; // No suitable block found
@@ -99,118 +101,106 @@ void* mem_alloc(size_t size) {
 
 void mem_free(void* block) {
     pthread_mutex_lock(&memory_mutex);
-    for (size_t i = 0; i < metadata_count; i++) {
-        if (block_array[i].memory == block) {
-            block_array[i].free = true;
+    Block* current = block_array;
+    Block* prev = NULL;
+    while (current != NULL) {
+        if (current->memory == block) {
+            current->free = true;
 
-            // Coalesce adjacent free blocks
-            size_t j = 0;
-            while (j < metadata_count - 1) {
-                if (block_array[j].free && block_array[j + 1].free &&
-                    (uintptr_t)block_array[j].memory + block_array[j].size == (uintptr_t)block_array[j + 1].memory) {
-                    block_array[j].size += block_array[j + 1].size;
-                    for (size_t k = j + 1; k < metadata_count - 1; k++) {
-                        block_array[k] = block_array[k + 1];
-                    }
-                    metadata_count--;
-                    Block* new_block_array = realloc(block_array, metadata_count * sizeof(Block));
-                    if (!new_block_array && metadata_count > 0) {
-                        printf("Failed to reallocate metadata array\n");
-                        pthread_mutex_unlock(&memory_mutex);
-                        exit(1);
-                    }
-                    block_array = new_block_array;
-                    memset(&block_array[metadata_count], 0, sizeof(Block));
-                    continue; // Re-check the current index after coalescing
-                }
-                j++;
+            // Coalesce with next free blocks
+            while (current->next != NULL && current->next->free) {
+                Block* temp = current->next;
+                current->size += temp->size;
+                current->next = temp->next;
+                free(temp);
+            }
+
+            // Coalesce with previous free blocks
+            if (prev != NULL && prev->free) {
+                prev->size += current->size;
+                prev->next = current->next;
+                free(current);
             }
 
             pthread_mutex_unlock(&memory_mutex);
             return;
         }
+        prev = current;
+        current = current->next;
     }
     pthread_mutex_unlock(&memory_mutex);
 }
 
 void* mem_resize(void* block, size_t size) {
     pthread_mutex_lock(&memory_mutex);
-    for (size_t i = 0; i < metadata_count; i++) {
-        if (block_array[i].memory == block) {
-            if (block_array[i].size == size) {
+    Block* current = block_array;
+    while (current != NULL) {
+        if (current->memory == block) {
+            if (current->size == size) {
                 pthread_mutex_unlock(&memory_mutex);
                 return block;
-            } else if (block_array[i].size > size) {
+            } else if (current->size > size) {
                 // Shrink the block
-                Block* new_block_array = realloc(block_array, (metadata_count + 1) * sizeof(Block));
-                if (!new_block_array) {
-                    printf("Failed to reallocate metadata array\n");
+                Block* new_block = malloc(sizeof(Block));
+                if (!new_block) {
+                    printf("Failed to allocate new block metadata\n");
                     pthread_mutex_unlock(&memory_mutex);
                     exit(1);
                 }
-                block_array = new_block_array;
+                new_block->size = current->size - size;
+                new_block->free = true;
+                new_block->memory = (void*)((uintptr_t)current->memory + size);
+                new_block->next = current->next;
 
-                block_array[metadata_count].size = block_array[i].size - size;
-                block_array[metadata_count].free = true;
-                block_array[metadata_count].memory = (void*)((uintptr_t)block_array[i].memory + size);
-
-                block_array[i].size = size;
-                metadata_count++;
+                current->size = size;
+                current->next = new_block;
 
                 pthread_mutex_unlock(&memory_mutex);
-                return block_array[i].memory;
+                return current->memory;
             } else {
                 // Check if next block is free and adjacent
-                if (i + 1 < metadata_count && block_array[i + 1].free &&
-                    (uintptr_t)block_array[i].memory + block_array[i].size == (uintptr_t)block_array[i + 1].memory &&
-                    block_array[i].size + block_array[i + 1].size >= size) {
+                if (current->next != NULL && current->next->free &&
+                    (uintptr_t)current->memory + current->size == (uintptr_t)current->next->memory &&
+                    current->size + current->next->size >= size) {
                     // Merge with next block
-                    block_array[i].size += block_array[i + 1].size;
-                    for (size_t k = i + 1; k < metadata_count - 1; k++) {
-                        block_array[k] = block_array[k + 1];
-                    }
-                    metadata_count--;
-                    Block* new_block_array = realloc(block_array, metadata_count * sizeof(Block));
-                    if (!new_block_array && metadata_count > 0) {
-                        printf("Failed to reallocate metadata array\n");
-                        pthread_mutex_unlock(&memory_mutex);
-                        exit(1);
-                    }
-                    block_array = new_block_array;
+                    Block* next_block = current->next;
+                    current->size += next_block->size;
+                    current->next = next_block->next;
+                    free(next_block);
 
-                    // Now attempt resize again
-                    if (block_array[i].size >= size) {
+                    // Attempt to resize again
+                    if (current->size >= size) {
                         // Split if larger than needed
-                        if (block_array[i].size > size) {
-                            Block* new_block_array = realloc(block_array, (metadata_count + 1) * sizeof(Block));
-                            if (!new_block_array) {
-                                printf("Failed to reallocate metadata array\n");
+                        if (current->size > size) {
+                            Block* new_block = malloc(sizeof(Block));
+                            if (!new_block) {
+                                printf("Failed to allocate new block metadata\n");
                                 pthread_mutex_unlock(&memory_mutex);
                                 exit(1);
                             }
-                            block_array = new_block_array;
+                            new_block->size = current->size - size;
+                            new_block->free = true;
+                            new_block->memory = (void*)((uintptr_t)current->memory + size);
+                            new_block->next = current->next;
 
-                            block_array[metadata_count].size = block_array[i].size - size;
-                            block_array[metadata_count].free = true;
-                            block_array[metadata_count].memory = (void*)((uintptr_t)block_array[i].memory + size);
-
-                            block_array[i].size = size;
-                            metadata_count++;
+                            current->size = size;
+                            current->next = new_block;
                         }
                         pthread_mutex_unlock(&memory_mutex);
-                        return block_array[i].memory;
+                        return current->memory;
                     }
                 }
                 pthread_mutex_unlock(&memory_mutex);
                 // Allocate a new block
-                void* new_block = mem_alloc(size);
-                if (new_block) {
-                    memcpy(new_block, block, block_array[i].size);
+                void* new_block_memory = mem_alloc(size);
+                if (new_block_memory) {
+                    memcpy(new_block_memory, block, current->size);
                     mem_free(block);
                 }
-                return new_block;
+                return new_block_memory;
             }
         }
+        current = current->next;
     }
     pthread_mutex_unlock(&memory_mutex);
     return NULL; // Block not found
@@ -230,24 +220,28 @@ void mem_deinit() {
 
 void print_blocks_ADMIN() {
     pthread_mutex_lock(&memory_mutex);
-    for (size_t i = 0; i < metadata_count; i++) {
+    Block* current = block_array;
+    while (current != NULL) {
         printf("Block at %p: size = %zu, free = %s, Memory at = %p\n",
-               (void*)&block_array[i], block_array[i].size, block_array[i].free ? "true" : "false",
-               block_array[i].memory);
+               (void*)current, current->size, current->free ? "true" : "false",
+               current->memory);
+        current = current->next;
     }
     pthread_mutex_unlock(&memory_mutex);
 }
 
 void print_blocks_USR() {
     pthread_mutex_lock(&memory_mutex);
-    for (size_t i = 0; i < metadata_count; i++) {
-        printf("Block at %p: size = %zu, free = %s \n",
-               block_array[i].memory, block_array[i].size, block_array[i].free ? "true" : "false");
+    Block* current = block_array;
+    while (current != NULL) {
+        printf("Block at %p: size = %zu, free = %s\n",
+               current->memory, current->size, current->free ? "true" : "false");
+        current = current->next;
     }
     pthread_mutex_unlock(&memory_mutex);
 }
 
-int mainNN() {
+int main() {
 
     printf("Memory Manager\n");
     printf("How much memory do you want to allocate? ");
