@@ -212,12 +212,16 @@ void mem_deinit() {
     memory_pool = NULL;
     memory_pool_size = 0;
 
-    free(block_array);
+    Block* current = block_array;
+    while (current != NULL) {
+        Block* next = current->next;
+        free(current);
+        current = next;
+    }
     block_array = NULL;
-    metadata_count = 0;
+
     pthread_mutex_unlock(&memory_mutex);
 }
-
 void print_blocks_ADMIN() {
     pthread_mutex_lock(&memory_mutex);
     Block* current = block_array;
@@ -241,7 +245,7 @@ void print_blocks_USR() {
     pthread_mutex_unlock(&memory_mutex);
 }
 
-int main() {
+int mainNN() {
 
     printf("Memory Manager\n");
     printf("How much memory do you want to allocate? ");
