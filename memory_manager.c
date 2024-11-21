@@ -36,7 +36,6 @@ typedef struct Block {
 } Block;
 
 Block* block_array = NULL;
-size_t metadata_count = 0;
 size_t memory_pool_size = 0;
 void* memory_pool = NULL;
 
@@ -222,6 +221,7 @@ void mem_deinit() {
 
     pthread_mutex_unlock(&memory_mutex);
 }
+
 void print_blocks_ADMIN() {
     pthread_mutex_lock(&memory_mutex);
     Block* current = block_array;

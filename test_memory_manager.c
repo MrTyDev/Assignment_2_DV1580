@@ -435,6 +435,18 @@ void *cumulative_alloc(void *arg)
     size_t block_size = data->block_size / 128;
     char **blocks = (char **)malloc(128 * sizeof(char *));
 
+
+
+    if (!blocks) {
+        printf("Failed to allocate blocks array\n");
+        return (void *)1; // Indicate failure
+    }
+        // Initialize the blocks array to NULL
+    for (int i = 0; i < 128; i++) {
+        blocks[i] = NULL;
+    }
+
+
     intptr_t returnval = 0;
     for (int i = 0; i < 128; i++)
     {
@@ -450,8 +462,11 @@ void *cumulative_alloc(void *arg)
         // memset(blocks[i], 0xAA, block_size);
     }
     my_barrier_wait(&barrier);
-    for (int i = 0; i < 128; i++)
-        mem_free(blocks[i]);
+    for (int i = 0; i < 128; i++) {
+        if (blocks[i] != NULL) {
+            mem_free(blocks[i]);
+        }
+    }
     free(blocks);
 
     return (void *)returnval; // Unexpected success
