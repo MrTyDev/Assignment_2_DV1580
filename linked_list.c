@@ -133,10 +133,10 @@ void list_delete(Node** head, uint16_t data) {
 
     Node* temp = *head;
     pthread_mutex_lock(&temp->lock);
-    pthread_mutex_unlock(&global_lock);
-
+    
     if (temp->data == data) {
         *head = temp->next;
+        pthread_mutex_unlock(&global_lock);
         pthread_mutex_unlock(&temp->lock);
         pthread_mutex_destroy(&temp->lock);
         mem_free(temp);
@@ -150,6 +150,7 @@ void list_delete(Node** head, uint16_t data) {
         pthread_mutex_lock(&temp->lock);
         if (temp->data == data) {
             prev->next = temp->next;
+            pthread_mutex_unlock(&global_lock);
             pthread_mutex_unlock(&temp->lock);
             pthread_mutex_destroy(&temp->lock);
             mem_free(temp);
@@ -160,6 +161,7 @@ void list_delete(Node** head, uint16_t data) {
         prev = temp;
         temp = temp->next;
     }
+    pthread_mutex_unlock(&global_lock);
     pthread_mutex_unlock(&prev->lock);
 }
 
@@ -297,6 +299,7 @@ void list_cleanup(Node** head) {
         mem_free(current);
         current = next_node;
     }
+
     mem_deinit();
 }
 
