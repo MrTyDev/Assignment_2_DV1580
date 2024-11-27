@@ -11,8 +11,10 @@
 pthread_mutex_t global_lock = PTHREAD_MUTEX_INITIALIZER;
 
 void list_init(Node** head, size_t size) {
+    //pthread_mutex_lock(&global_lock);
     mem_init(size);
     *head = NULL;
+    //pthread_mutex_unlock(&global_lock);
 }
 
 void list_insert(Node** head, uint16_t data) {

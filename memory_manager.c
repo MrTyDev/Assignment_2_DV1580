@@ -42,7 +42,7 @@ void* memory_pool = NULL;
 pthread_mutex_t memory_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 void mem_init(size_t size) {
-    pthread_mutex_lock(&memory_mutex);
+    pthread_mutex_lock(&memory_mutex); // Lock helps to prevent multiple threads from initializing memory pool
     memory_pool = malloc(size);
     if (memory_pool == NULL) {
         printf("Memory allocation failed\n");
@@ -62,11 +62,11 @@ void mem_init(size_t size) {
     block_array->free = true;
     block_array->memory = memory_pool;
     block_array->next = NULL;
-    pthread_mutex_unlock(&memory_mutex);
+    pthread_mutex_unlock(&memory_mutex); // Unlock after initialization
 }
 
 void* mem_alloc(size_t size) {
-    pthread_mutex_lock(&memory_mutex);
+    pthread_mutex_lock(&memory_mutex); // Lock helps to prevent multiple threads from allocating memory
     Block* current = block_array;
     while (current != NULL) {
         if (current->free && current->size >= size) {
@@ -75,7 +75,7 @@ void* mem_alloc(size_t size) {
                 Block* new_block = malloc(sizeof(Block));
                 if (!new_block) {
                     printf("Failed to allocate new block metadata\n");
-                    pthread_mutex_unlock(&memory_mutex);
+                    pthread_mutex_unlock(&memory_mutex); // Unlock before exit
                     exit(1);
                 }
                 new_block->size = current->size - size;
@@ -89,17 +89,17 @@ void* mem_alloc(size_t size) {
             current->free = false;
             void* allocated_memory = current->memory;
             memset(allocated_memory, 0, size); // Initialize allocated memory to zero
-            pthread_mutex_unlock(&memory_mutex);
+            pthread_mutex_unlock(&memory_mutex); // Unlock before return
             return allocated_memory;
         }
         current = current->next;
     }
-    pthread_mutex_unlock(&memory_mutex);
+    pthread_mutex_unlock(&memory_mutex); // Unlock before return
     return NULL; // No suitable block found
 }
 
 void mem_free(void* block) {
-    pthread_mutex_lock(&memory_mutex);
+    pthread_mutex_lock(&memory_mutex); // Lock helps to prevent multiple threads from freeing memory
     Block* current = block_array;
     Block* prev = NULL;
     while (current != NULL) {
@@ -121,29 +121,29 @@ void mem_free(void* block) {
                 free(current);
             }
 
-            pthread_mutex_unlock(&memory_mutex);
+            pthread_mutex_unlock(&memory_mutex); // Unlock before return
             return;
         }
         prev = current;
         current = current->next;
     }
-    pthread_mutex_unlock(&memory_mutex);
+    pthread_mutex_unlock(&memory_mutex); // Unlock before return
 }
 
 void* mem_resize(void* block, size_t size) {
-    pthread_mutex_lock(&memory_mutex);
+    pthread_mutex_lock(&memory_mutex); // Lock helps to prevent multiple threads from resizing memory
     Block* current = block_array;
     while (current != NULL) {
         if (current->memory == block) {
             if (current->size == size) {
-                pthread_mutex_unlock(&memory_mutex);
+                pthread_mutex_unlock(&memory_mutex); // Unlock before return
                 return block;
             } else if (current->size > size) {
                 // Shrink the block
                 Block* new_block = malloc(sizeof(Block));
                 if (!new_block) {
                     printf("Failed to allocate new block metadata\n");
-                    pthread_mutex_unlock(&memory_mutex);
+                    pthread_mutex_unlock(&memory_mutex); // Unlock before exit
                     exit(1);
                 }
                 new_block->size = current->size - size;
@@ -154,7 +154,7 @@ void* mem_resize(void* block, size_t size) {
                 current->size = size;
                 current->next = new_block;
 
-                pthread_mutex_unlock(&memory_mutex);
+                pthread_mutex_unlock(&memory_mutex); // Unlock before return
                 return current->memory;
             } else {
                 // Check if next block is free and adjacent
@@ -174,7 +174,7 @@ void* mem_resize(void* block, size_t size) {
                             Block* new_block = malloc(sizeof(Block));
                             if (!new_block) {
                                 printf("Failed to allocate new block metadata\n");
-                                pthread_mutex_unlock(&memory_mutex);
+                                pthread_mutex_unlock(&memory_mutex); // Unlock before exit
                                 exit(1);
                             }
                             new_block->size = current->size - size;
@@ -185,11 +185,11 @@ void* mem_resize(void* block, size_t size) {
                             current->size = size;
                             current->next = new_block;
                         }
-                        pthread_mutex_unlock(&memory_mutex);
+                        pthread_mutex_unlock(&memory_mutex); // Unlock before return
                         return current->memory;
                     }
                 }
-                pthread_mutex_unlock(&memory_mutex);
+                pthread_mutex_unlock(&memory_mutex); // Unlock before return
                 // Allocate a new block
                 void* new_block_memory = mem_alloc(size);
                 if (new_block_memory) {
@@ -201,12 +201,12 @@ void* mem_resize(void* block, size_t size) {
         }
         current = current->next;
     }
-    pthread_mutex_unlock(&memory_mutex);
+    pthread_mutex_unlock(&memory_mutex); // Unlock before return
     return NULL; // Block not found
 }
 
 void mem_deinit() {
-    pthread_mutex_lock(&memory_mutex);
+    pthread_mutex_lock(&memory_mutex); // Lock helps to prevent multiple threads from deinitializing memory pool
     free(memory_pool);
     memory_pool = NULL;
     memory_pool_size = 0;
@@ -219,7 +219,7 @@ void mem_deinit() {
     }
     block_array = NULL;
 
-    pthread_mutex_unlock(&memory_mutex);
+    pthread_mutex_unlock(&memory_mutex); // Unlock after deinitialization
 }
 
 void print_blocks_ADMIN() {
